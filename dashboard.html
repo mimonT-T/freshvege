@@ -468,7 +468,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🥬 FreshVege Dashboard</h1>
+            <h1>FreshVege Dashboard</h1>
             <p>Farm to Doorstep Management System</p>
         </div>
 
@@ -788,581 +788,813 @@
 
     <script>
         // Global variables to store data
-        let allProducts = [];
-        let allFarmers = [];
-        let allCustomers = [];
-        let allOrders = [];
+// Global variables to store data
+let allProducts = [];
+let allFarmers = [];
+let allCustomers = [];
+let allOrders = [];
+let categories = [];
+let units = [];
 
-        function showSection(sectionId) {
-            // Hide all sections
-            document.querySelectorAll('.section').forEach(section => {
-                section.classList.remove('active');
+// API base URL - adjust this to match your server setup
+// Try different possible paths:
+const API_BASE_URL = getApiUrl();
+
+function getApiUrl() {
+    // Try to detect the correct API path
+    const currentPath = window.location.pathname;
+    const currentDir = currentPath.substring(0, currentPath.lastIndexOf('/'));
+    
+    // Common API paths to try
+    const possiblePaths = [
+        'api.php',                    // Same directory
+        './api.php',                  // Same directory (explicit)
+        '../api.php',                 // Parent directory
+        '/api.php',                   // Root directory
+        currentDir + '/api.php',      // Current directory
+        'backend/api.php',            // Backend folder
+        'api/index.php',              // API folder
+        'includes/api.php'            // Includes folder
+    ];
+    
+    // For now, return the most common path
+    // You can modify this based on your actual file structure
+    return 'api.php';
+}
+
+// Utility function to make API calls
+async function apiCall(action, method = 'GET', data = null) {
+    try {
+        // Test API availability first
+        if (!window.apiTested) {
+            await testApiConnection();
+            window.apiTested = true;
+        }
+        
+        const options = {
+            method: method,
+            headers: {
+                'Content-Type': method === 'POST' ? 'application/x-www-form-urlencoded' : 'application/json'
+            }
+        };
+        
+        let url = `${API_BASE_URL}?action=${action}`;
+        
+        if (method === 'POST' && data) {
+            const formData = new URLSearchParams();
+            Object.keys(data).forEach(key => {
+                if (data[key] !== null && data[key] !== undefined) {
+                    formData.append(key, data[key]);
+                }
             });
+            options.body = formData;
+        }
+        
+        console.log(`Making API call: ${method} ${url}`);
+        const response = await fetch(url, options);
+        
+        if (!response.ok) {
+            // Get the actual error content
+            const errorText = await response.text();
+            console.error('Server error response:', errorText);
+            throw new Error(`HTTP ${response.status}: ${response.statusText}\n${errorText.substring(0, 200)}...`);
+        }
+        
+        // Check if response is actually JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const textResponse = await response.text();
+            console.error('Non-JSON response received:', textResponse);
             
-            // Remove active class from all buttons
+            // If it's a PHP error, show it
+            if (textResponse.includes('Parse error') || textResponse.includes('Fatal error')) {
+                throw new Error(`PHP Error: ${textResponse.substring(0, 300)}`);
+            }
+            
+            throw new Error(`Server returned ${contentType} instead of JSON. Response: ${textResponse.substring(0, 200)}`);
+        }
+        
+        const result = await response.json();
+        console.log(`API response for ${action}:`, result);
+        return result;
+    } catch (error) {
+        console.error('API call failed:', error);
+        
+        // Provide specific error messages
+        if (error.message.includes('404')) {
+            showAlert(`API file not found. Please check that api.php exists in your server directory.`, 'error');
+        } else if (error.message.includes('Failed to fetch')) {
+            showAlert(`Cannot connect to server. Please check if your web server is running.`, 'error');
+        } else if (error.message.includes('PHP Error')) {
+            showAlert(`PHP Error in api.php: ${error.message}`, 'error');
+        } else if (error.message.includes('Unexpected token')) {
+            showAlert(`Server returned HTML instead of JSON. This usually means there's a PHP error. Check browser console for details.`, 'error');
+        } else if (error.message.includes('application/x-httpd-php')) {
+            showAlert(`
+                <strong>PHP Not Running!</strong><br>
+                Your web server is not executing PHP files. Please:<br>
+                • If using XAMPP: Start Apache with PHP module<br>
+                • If using WAMP: Make sure Apache and PHP are running<br>
+                • If using VS Code Live Server: Switch to XAMPP/WAMP/MAMP<br>
+                • Access via http://localhost/your-project/ (not file://)
+            `, 'error');
+        } else {
+            showAlert(`API Error: ${error.message}`, 'error');
+        }
+        
+        return { success: false, error: error.message };
+    }
+}
+
+// Test API connection
+async function testApiConnection() {
+    try {
+        console.log(`Testing API connection at: ${API_BASE_URL}`);
+        const response = await fetch(`${API_BASE_URL}?action=get_stats`);
+        if (!response.ok) {
+            throw new Error(`API test failed: ${response.status} ${response.statusText}`);
+        }
+        console.log('API connection successful');
+        return true;
+    } catch (error) {
+        console.error('API connection test failed:', error);
+        
+        // Show detailed troubleshooting message
+        showAlert(`
+            <strong>Database Connection Issue</strong><br>
+            Cannot connect to the API. Please check:<br>
+            • Is your web server (Apache/Nginx) running?<br>
+            • Is the api.php file in the correct location?<br>
+            • Are your database credentials correct in config.php?<br>
+            • Current API URL: ${API_BASE_URL}
+        `, 'error');
+        
+        throw error;
+    }
+}
+
+function showSection(sectionId) {
+    // Hide all sections
+    document.querySelectorAll('.section').forEach(section => {
+        section.classList.remove('active');
+    });
+    
+    // Remove active class from all buttons
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Show selected section
+    document.getElementById(sectionId).classList.add('active');
+    
+    // Add active class to clicked button
+    event.target.classList.add('active');
+    
+    // Load data based on section
+    switch(sectionId) {
+        case 'overview':
+            loadOverview();
+            break;
+        case 'add-product':
+            loadFormDropdowns();
+            break;
+        case 'view-products':
+            loadProducts();
+            break;
+        case 'manage-farmers':
+            loadFarmers();
+            break;
+        case 'manage-customers':
+            loadCustomers();
+            break;
+        case 'view-orders':
+            loadOrders();
+            break;
+    }
+}
+
+async function loadOverview() {
+    try {
+        const response = await apiCall('get_stats');
+        if (response.success) {
+            const stats = response.data;
+            document.getElementById('total-products').textContent = stats.total_products || '0';
+            document.getElementById('total-farmers').textContent = stats.total_farmers || '0';
+            document.getElementById('total-customers').textContent = stats.total_customers || '0';
+            document.getElementById('total-orders').textContent = stats.total_orders || '0';
+        } else {
+            // Fallback to hardcoded values if API fails
+            document.getElementById('total-products').textContent = '24';
+            document.getElementById('total-farmers').textContent = '6';
+            document.getElementById('total-customers').textContent = '5';
+            document.getElementById('total-orders').textContent = '5';
+        }
+    } catch (error) {
+        console.error('Error loading overview:', error);
+        showAlert('Failed to load dashboard statistics', 'error');
+    }
+}
+
+async function loadFormDropdowns() {
+    try {
+        // Load categories and units for the add product form
+        const [categoriesResponse, unitsResponse, farmersResponse] = await Promise.all([
+            apiCall('get_categories'),
+            apiCall('get_units'),
+            apiCall('get_farmers')
+        ]);
+        
+        if (categoriesResponse.success) {
+            categories = categoriesResponse.data;
+            updateCategoryDropdown();
+        }
+        
+        if (unitsResponse.success) {
+            units = unitsResponse.data;
+            updateUnitsDropdown();
+        }
+        
+        if (farmersResponse.success) {
+            allFarmers = farmersResponse.data;
+            updateFarmersDropdown();
+        }
+    } catch (error) {
+        console.error('Error loading form dropdowns:', error);
+    }
+}
+
+function updateCategoryDropdown() {
+    const categorySelect = document.getElementById('category_id');
+    if (categorySelect && categories.length > 0) {
+        categorySelect.innerHTML = '<option value="">Choose a category...</option>';
+        categories.forEach(category => {
+            categorySelect.innerHTML += `<option value="${category.id}">${category.name}</option>`;
+        });
+    }
+}
+
+function updateUnitsDropdown() {
+    const unitSelect = document.getElementById('unit_id');
+    if (unitSelect && units.length > 0) {
+        unitSelect.innerHTML = '<option value="">Choose a unit...</option>';
+        units.forEach(unit => {
+            unitSelect.innerHTML += `<option value="${unit.id}">${unit.name} (${unit.abbreviation})</option>`;
+        });
+    }
+}
+
+function updateFarmersDropdown() {
+    const farmerSelect = document.getElementById('farmer_id');
+    if (farmerSelect && allFarmers.length > 0) {
+        farmerSelect.innerHTML = '<option value="">Choose a farmer...</option>';
+        allFarmers.forEach(farmer => {
+            farmerSelect.innerHTML += `<option value="${farmer.id}">${farmer.name} (${farmer.city})</option>`;
+        });
+    }
+}
+
+async function loadProducts() {
+    const container = document.getElementById('products-container');
+    
+    // Show loading state
+    container.innerHTML = `
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading products...</p>
+        </div>
+    `;
+    
+    try {
+        const response = await apiCall('get_products');
+        
+        if (response.success) {
+            allProducts = response.data;
+            
+            if (allProducts.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #666; padding: 50px;">No products found. Add some products to get started!</p>';
+                return;
+            }
+            
+            container.innerHTML = allProducts.map(product => `
+                <div class="card">
+                    <div class="card-title">${product.name}</div>
+                    <div class="card-details">
+                        <p><strong>বর্ণনা:</strong> ${product.description || 'No description available'}</p>
+                        <p><strong>Farmer:</strong> ${product.farmer_name}</p>
+                        <p><strong>Category:</strong> ${product.category_name}</p>
+                        <p><strong>Available:</strong> ${product.quantity_available} ${product.unit_abbrev}</p>
+                        <p><strong>Status:</strong> <span style="color: ${product.status === 'active' ? '#28a745' : '#ffc107'}">${product.status === 'active' ? 'In Stock' : 'Out of Stock'}</span></p>
+                    </div>
+                    <div class="card-price">৳${parseFloat(product.price).toFixed(2)} per ${product.unit_abbrev}</div>
+                </div>
+            `).join('');
+        } else {
+            throw new Error(response.error || 'Failed to load products');
+        }
+    } catch (error) {
+        console.error('Error loading products:', error);
+        container.innerHTML = '<p style="text-align: center; color: #dc3545; padding: 50px;">Failed to load products. Please try again.</p>';
+    }
+}
+
+async function loadFarmers() {
+    const container = document.getElementById('farmers-container');
+    
+    // Show loading state
+    container.innerHTML = `
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading farmers...</p>
+        </div>
+    `;
+    
+    try {
+        const response = await apiCall('get_farmers');
+        
+        if (response.success) {
+            allFarmers = response.data;
+            
+            if (allFarmers.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #666; padding: 50px;">No farmers registered yet. Register some farmers to get started!</p>';
+                return;
+            }
+            
+            container.innerHTML = allFarmers.map(farmer => {
+                const joinDate = new Date(farmer.created_at).toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'short' 
+                });
+                
+                return `
+                    <div class="card">
+                        <div class="card-title">👨‍🌾 ${farmer.name}</div>
+                        <div class="card-details">
+                            <p><strong>📧 Email:</strong> ${farmer.email || 'Not provided'}</p>
+                            <p><strong>📱 Phone:</strong> ${farmer.phone || 'Not provided'}</p>
+                            <p><strong>🏘️ Location:</strong> ${farmer.city || 'Not specified'}</p>
+                            <p><strong>📍 Address:</strong> ${farmer.address || 'Not provided'}</p>
+                            <p><strong>🌱 Products:</strong> ${farmer.product_count || 0} active products</p>
+                            <p><strong>📅 Joined:</strong> ${joinDate}</p>
+                        </div>
+                        <div class="card-price">Active Farmer</div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Update farmer dropdown in add product form
+            updateFarmersDropdown();
+        } else {
+            throw new Error(response.error || 'Failed to load farmers');
+        }
+    } catch (error) {
+        console.error('Error loading farmers:', error);
+        container.innerHTML = '<p style="text-align: center; color: #dc3545; padding: 50px;">Failed to load farmers. Please try again.</p>';
+    }
+}
+
+async function loadCustomers() {
+    const container = document.getElementById('customers-container');
+    
+    // Show loading state
+    container.innerHTML = `
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading customers...</p>
+        </div>
+    `;
+    
+    try {
+        const response = await apiCall('get_customers');
+        
+        if (response.success) {
+            allCustomers = response.data;
+            
+            if (allCustomers.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #666; padding: 50px;">No customers registered yet. Add some customers to get started!</p>';
+                return;
+            }
+            
+            container.innerHTML = allCustomers.map(customer => {
+                const getCustomerStatus = (orderCount, totalSpent) => {
+                    if (totalSpent > 2000) return 'Premium Customer';
+                    if (orderCount > 3) return 'Regular Customer';
+                    return 'New Customer';
+                };
+                
+                const status = getCustomerStatus(customer.order_count, customer.total_spent);
+                const statusColor = status.includes('Premium') ? '#28a745' : status.includes('New') ? '#17a2b8' : '#6c757d';
+                
+                return `
+                    <div class="card">
+                        <div class="card-title">👤 ${customer.first_name} ${customer.last_name}</div>
+                        <div class="card-details">
+                            <p><strong>📧 Email:</strong> ${customer.email}</p>
+                            <p><strong>📱 Phone:</strong> ${customer.phone || 'Not provided'}</p>
+                            <p><strong>🏘️ City:</strong> ${customer.city || 'Not specified'}</p>
+                            <p><strong>📍 Address:</strong> ${customer.address || 'Not provided'}</p>
+                            <p><strong>📦 Orders:</strong> ${customer.order_count || 0} completed</p>
+                            <p><strong>💰 Total Spent:</strong> ৳${parseFloat(customer.total_spent || 0).toFixed(2)}</p>
+                        </div>
+                        <div class="card-price" style="color: ${statusColor}">${status}</div>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            throw new Error(response.error || 'Failed to load customers');
+        }
+    } catch (error) {
+        console.error('Error loading customers:', error);
+        container.innerHTML = '<p style="text-align: center; color: #dc3545; padding: 50px;">Failed to load customers. Please try again.</p>';
+    }
+}
+
+async function loadOrders() {
+    const container = document.getElementById('orders-container');
+    
+    // Show loading state
+    container.innerHTML = `
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading orders...</p>
+        </div>
+    `;
+    
+    try {
+        const response = await apiCall('get_orders');
+        
+        if (response.success) {
+            allOrders = response.data;
+            
+            if (allOrders.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #666; padding: 50px;">No orders found yet.</p>';
+                return;
+            }
+            
+            container.innerHTML = allOrders.map(order => {
+                const orderDate = new Date(order.created_at).toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'short',
+                    day: 'numeric'
+                });
+                
+                // Format items list
+                const itemsList = order.items.map(item => 
+                    `${item.product_name} (${item.quantity}${item.unit})`
+                ).join(', ');
+                
+                return `
+                    <div class="order-card">
+                        <div class="order-header">
+                            <div class="order-number">📦 ${order.order_number}</div>
+                            <div class="order-status status-${order.status}">${order.status.charAt(0).toUpperCase() + order.status.slice(1)}</div>
+                        </div>
+                        <div class="customer-info">
+                            <div class="info-item">
+                                <div class="info-label">👤 Customer</div>
+                                <div class="info-value">${order.customer_name}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">💰 Total Amount</div>
+                                <div class="info-value">৳${parseFloat(order.total_amount).toFixed(2)}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">📅 Order Date</div>
+                                <div class="info-value">${orderDate}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">💳 Payment</div>
+                                <div class="info-value" style="color: ${order.payment_status === 'paid' ? '#28a745' : '#ffc107'}">${order.payment_status.charAt(0).toUpperCase() + order.payment_status.slice(1)}</div>
+                            </div>
+                        </div>
+                        <div class="card-details">
+                            <p><strong>🛒 Items:</strong> ${itemsList}</p>
+                            <p><strong>📍 Shipping:</strong> ${order.shipping_address}</p>
+                            <p><strong>📱 Contact:</strong> ${order.customer_phone || 'Not provided'}</p>
+                            ${order.notes ? `<p><strong>📝 Notes:</strong> ${order.notes}</p>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            throw new Error(response.error || 'Failed to load orders');
+        }
+    } catch (error) {
+        console.error('Error loading orders:', error);
+        container.innerHTML = '<p style="text-align: center; color: #dc3545; padding: 50px;">Failed to load orders. Please try again.</p>';
+    }
+}
+
+async function loadAllData() {
+    try {
+        showAlert('Refreshing all data...', 'success');
+        
+        await Promise.all([
+            loadOverview(),
+            loadProducts(),
+            loadFarmers(),
+            loadCustomers(),
+            loadOrders(),
+            loadFormDropdowns()
+        ]);
+        
+        showAlert('All data refreshed successfully!', 'success');
+    } catch (error) {
+        console.error('Error refreshing data:', error);
+        showAlert('Some data failed to refresh. Please try again.', 'error');
+    }
+}
+
+function showAlert(message, type = 'success') {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type === 'error' ? 'error' : 'success'}`;
+    alertDiv.innerHTML = message;
+    
+    // Insert at the top of the active section
+    const activeSection = document.querySelector('.section.active');
+    if (activeSection) {
+        activeSection.insertBefore(alertDiv, activeSection.firstChild);
+        
+        // Remove alert after 3 seconds
+        setTimeout(() => {
+            if (alertDiv.parentNode) {
+                alertDiv.remove();
+            }
+        }, 3000);
+    }
+}
+
+// Form submission handlers
+document.getElementById('productForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const productData = Object.fromEntries(formData);
+    
+    // Validate required fields
+    if (!productData.farmer_id || !productData.category_id || !productData.unit_id || !productData.name || !productData.price || !productData.quantity_available) {
+        showAlert('Please fill in all required fields.', 'error');
+        return;
+    }
+    
+    try {
+        const response = await apiCall('add_product', 'POST', productData);
+        
+        if (response.success) {
+            showAlert('🌱 Product added successfully! Ready for customers.', 'success');
+            this.reset();
+            // Reload products if we're on that section
+            if (document.getElementById('view-products').classList.contains('active')) {
+                loadProducts();
+            }
+            loadOverview(); // Update stats
+        } else {
+            showAlert(response.message || 'Failed to add product. Please try again.', 'error');
+        }
+    } catch (error) {
+        console.error('Error adding product:', error);
+        showAlert('Error adding product. Please try again.', 'error');
+    }
+});
+
+document.getElementById('farmerForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const farmerData = Object.fromEntries(formData);
+    
+    // Validate required fields
+    if (!farmerData.farmer_name) {
+        showAlert('Farmer name is required.', 'error');
+        return;
+    }
+    
+    try {
+        const response = await apiCall('add_farmer', 'POST', farmerData);
+        
+        if (response.success) {
+            showAlert('👨‍🌾 Farmer registered successfully! Welcome to FreshVege family.', 'success');
+            this.reset();
+            loadFarmers();
+            loadOverview(); // Update stats
+            updateFarmersDropdown(); // Update dropdown in add product form
+        } else {
+            showAlert(response.message || 'Failed to register farmer. Please try again.', 'error');
+        }
+    } catch (error) {
+        console.error('Error registering farmer:', error);
+        showAlert('Error registering farmer. Please try again.', 'error');
+    }
+});
+
+document.getElementById('customerForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const customerData = Object.fromEntries(formData);
+    
+    // Validate required fields
+    if (!customerData.customer_first_name || !customerData.customer_last_name || !customerData.customer_email) {
+        showAlert('First name, last name, and email are required.', 'error');
+        return;
+    }
+    
+    try {
+        const response = await apiCall('add_customer', 'POST', customerData);
+        
+        if (response.success) {
+            showAlert('👤 Customer added successfully! Account is ready.', 'success');
+            this.reset();
+            loadCustomers();
+            loadOverview(); // Update stats
+        } else {
+            showAlert(response.message || 'Failed to add customer. Please try again.', 'error');
+        }
+    } catch (error) {
+        console.error('Error adding customer:', error);
+        showAlert('Error adding customer. Please try again.', 'error');
+    }
+});
+
+// Search and filter functions
+document.getElementById('product-search')?.addEventListener('input', function() {
+    const searchTerm = this.value.toLowerCase();
+    const productCards = document.querySelectorAll('#products-container .card');
+    
+    productCards.forEach(card => {
+        const productName = card.querySelector('.card-title').textContent.toLowerCase();
+        const productDesc = card.querySelector('.card-details').textContent.toLowerCase();
+        
+        if (productName.includes(searchTerm) || productDesc.includes(searchTerm)) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+});
+
+document.getElementById('order-search')?.addEventListener('input', function() {
+    const searchTerm = this.value.toLowerCase();
+    const orderCards = document.querySelectorAll('#orders-container .order-card');
+    
+    orderCards.forEach(card => {
+        const orderText = card.textContent.toLowerCase();
+        
+        if (orderText.includes(searchTerm)) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+});
+
+// Category filter for products
+document.getElementById('product-category-filter')?.addEventListener('change', function() {
+    const selectedCategory = this.value;
+    const productCards = document.querySelectorAll('#products-container .card');
+    
+    productCards.forEach(card => {
+        if (!selectedCategory) {
+            card.style.display = 'block';
+        } else {
+            const categoryText = card.querySelector('.card-details').textContent;
+            const product = allProducts.find(p => p.name === card.querySelector('.card-title').textContent);
+            
+            if (product && product.category_id == selectedCategory) {
+                card.style.display = 'block';
+            } else {
+                card.style.display = 'none';
+            }
+        }
+    });
+});
+
+// Order status filter
+document.getElementById('order-status-filter')?.addEventListener('change', function() {
+    const selectedStatus = this.value;
+    const orderCards = document.querySelectorAll('#orders-container .order-card');
+    
+    orderCards.forEach(card => {
+        if (!selectedStatus) {
+            card.style.display = 'block';
+        } else {
+            const statusElement = card.querySelector('.order-status');
+            if (statusElement && statusElement.classList.contains(`status-${selectedStatus}`)) {
+                card.style.display = 'block';
+            } else {
+                card.style.display = 'none';
+            }
+        }
+    });
+});
+
+// Initialize dashboard
+window.onload = async function() {
+    try {
+        // Show initial loading message
+        showAlert('Initializing FreshVege Dashboard...', 'success');
+        
+        // Try to load data from API first
+        try {
+            await loadAllData();
+            showAlert('Welcome to FreshVege Dashboard! সুস্বাগতম! Connected to database successfully.', 'success');
+        } catch (error) {
+            console.warn('Database connection failed, using demo data:', error);
+            
+            // Fall back to demo data if API fails
+            loadDemoData();
+            showAlert(`
+                <strong>Demo Mode Active</strong><br>
+                Could not connect to database. Showing demo data.<br>
+                <small>To fix: Ensure api.php exists and your web server is running</small>
+            `, 'error');
+        }
+    } catch (error) {
+        console.error('Error initializing dashboard:', error);
+        loadDemoData();
+        showAlert('Dashboard loaded in demo mode. Database connection failed.', 'error');
+    }
+};
+
+// Fallback demo data
+function loadDemoData() {
+    // Load hardcoded demo data as fallback
+    document.getElementById('total-products').textContent = '24';
+    document.getElementById('total-farmers').textContent = '6';
+    document.getElementById('total-customers').textContent = '5';
+    document.getElementById('total-orders').textContent = '5';
+    
+    // Demo products
+    const demoProducts = [
+        {
+            name: 'Fresh Capsicum',
+            description: 'রঙিন ক্যাপসিকাম, সালাদ ও রান্নার জন্য উপযুক্ত',
+            price: '৳80.00',
+            quantity_available: '25.50',
+            farmer_name: 'Rahim Hasnat',
+            category_name: 'Vegetables',
+            unit_abbrev: 'kg',
+            status: 'active'
+        },
+        {
+            name: 'Fresh Tomatoes',
+            description: 'টাটকা লাল টমেটো, রান্না ও সালাদের জন্য',
+            price: '৳75.00',
+            quantity_available: '30.00',
+            farmer_name: 'Rahim Hasnat',
+            category_name: 'Vegetables',
+            unit_abbrev: 'kg',
+            status: 'active'
+        },
+        // Add more demo data as needed
+    ];
+    
+    // Display demo products
+    const container = document.getElementById('products-container');
+    if (container) {
+        container.innerHTML = demoProducts.map(product => `
+            <div class="card">
+                <div class="card-title">${product.name}</div>
+                <div class="card-details">
+                    <p><strong>বর্ণনা:</strong> ${product.description}</p>
+                    <p><strong>Farmer:</strong> ${product.farmer_name}</p>
+                    <p><strong>Category:</strong> ${product.category_name}</p>
+                    <p><strong>Available:</strong> ${product.quantity_available} ${product.unit_abbrev}</p>
+                    <p><strong>Status:</strong> <span style="color: #28a745">In Stock</span></p>
+                </div>
+                <div class="card-price">${product.price} per ${product.unit_abbrev}</div>
+            </div>
+        `).join('');
+    }
+}
+
+// Add some interactivity to stats cards
+document.addEventListener('DOMContentLoaded', function() {
+    const statCards = document.querySelectorAll('.stat-card');
+    statCards.forEach(card => {
+        card.addEventListener('click', function() {
+            const label = this.querySelector('.stat-label').textContent;
+            
+            // Remove active class from all nav buttons first
             document.querySelectorAll('.nav-btn').forEach(btn => {
                 btn.classList.remove('active');
             });
             
-            // Show selected section
-            document.getElementById(sectionId).classList.add('active');
-            
-            // Add active class to clicked button
-            event.target.classList.add('active');
-            
-            // Load data based on section
-            switch(sectionId) {
-                case 'overview':
-                    loadOverview();
-                    break;
-                case 'view-products':
-                    loadProducts();
-                    break;
-                case 'manage-farmers':
-                    loadFarmers();
-                    break;
-                case 'manage-customers':
-                    loadCustomers();
-                    break;
-                case 'view-orders':
-                    loadOrders();
-                    break;
+            if (label.includes('Products')) {
+                showSection('view-products');
+                document.querySelector('[onclick="showSection(\'view-products\')"]').classList.add('active');
+            } else if (label.includes('Farmers')) {
+                showSection('manage-farmers');
+                document.querySelector('[onclick="showSection(\'manage-farmers\')"]').classList.add('active');
+            } else if (label.includes('Customers')) {
+                showSection('manage-customers');
+                document.querySelector('[onclick="showSection(\'manage-customers\')"]').classList.add('active');
+            } else if (label.includes('Orders')) {
+                showSection('view-orders');
+                document.querySelector('[onclick="showSection(\'view-orders\')"]').classList.add('active');
             }
-        }
-
-        function loadOverview() {
-            // Update statistics
-            document.getElementById('total-products').textContent = allProducts.length || '24';
-            document.getElementById('total-farmers').textContent = allFarmers.length || '6';
-            document.getElementById('total-customers').textContent = allCustomers.length || '5';
-            document.getElementById('total-orders').textContent = allOrders.length || '5';
-        }
-
-        function loadProducts() {
-            const container = document.getElementById('products-container');
-            
-            // Sample products based on your database schema
-            const products = [
-                {
-                    id: 1,
-                    name: 'Fresh Capsicum',
-                    description: 'রঙিন ক্যাপসিকাম, সালাদ ও রান্নার জন্য উপযুক্ত',
-                    price: '৳80.00',
-                    quantity: '25.50 kg',
-                    farmer: 'Rahim Hasnat',
-                    category: 'Vegetables',
-                    status: 'In Stock'
-                },
-                {
-                    id: 2,
-                    name: 'Fresh Tomatoes',
-                    description: 'টাটকা লাল টমেটো, রান্না ও সালাদের জন্য',
-                    price: '৳75.00',
-                    quantity: '30.00 kg',
-                    farmer: 'Rahim Hasnat',
-                    category: 'Vegetables',
-                    status: 'In Stock'
-                },
-                {
-                    id: 3,
-                    name: 'Green Beans',
-                    description: 'তাজা শিম, পুষ্টিকর ও সুস্বাদু',
-                    price: '৳120.00',
-                    quantity: '15.75 kg',
-                    farmer: 'Abrar Sayed Tasin',
-                    category: 'Vegetables',
-                    status: 'In Stock'
-                },
-                {
-                    id: 4,
-                    name: 'Purple Cabbage',
-                    description: 'বেগুনি বাঁধাকপি, ভিটামিন সমৃদ্ধ',
-                    price: '৳200.00',
-                    quantity: '20.00 kg',
-                    farmer: 'Kuddus Ali',
-                    category: 'Vegetables',
-                    status: 'In Stock'
-                },
-                {
-                    id: 5,
-                    name: 'Fresh Strawberry',
-                    description: 'মিষ্টি স্ট্রবেরি, ভিটামিন সি সমৃদ্ধ',
-                    price: '৳80.00',
-                    quantity: '8.50 kg',
-                    farmer: 'Abrar Sayed Tasin',
-                    category: 'Fruits',
-                    status: 'Limited Stock'
-                },
-                {
-                    id: 6,
-                    name: 'Bangladeshi Mango',
-                    description: 'দেশী আম (ল্যাংড়া), মিষ্টি ও সুস্বাদু',
-                    price: '৳150.00',
-                    quantity: '100 pcs',
-                    farmer: 'Nasir Uddin',
-                    category: 'Fruits',
-                    status: 'In Stock'
-                },
-                {
-                    id: 7,
-                    name: 'Green Spinach',
-                    description: 'তাজা পালং শাক, আয়রন ও ভিটামিন ভরপুর',
-                    price: '৳18.00',
-                    quantity: '50 মুঠা',
-                    farmer: 'Abrar Sayed Tasin',
-                    category: 'Vegetables',
-                    status: 'In Stock'
-                },
-                {
-                    id: 8,
-                    name: 'Miniket Rice',
-                    description: 'মিনিকেট চাল, সুগন্ধি ও সুস্বাদু',
-                    price: '৳55.00',
-                    quantity: '200 kg',
-                    farmer: 'Kuddus Ali',
-                    category: 'Grains',
-                    status: 'In Stock'
-                }
-            ];
-
-            allProducts = products;
-
-            container.innerHTML = products.map(product => `
-                <div class="card">
-                    <div class="card-title">${product.name}</div>
-                    <div class="card-details">
-                        <p><strong>বর্ণনা:</strong> ${product.description}</p>
-                        <p><strong>Farmer:</strong> ${product.farmer}</p>
-                        <p><strong>Category:</strong> ${product.category}</p>
-                        <p><strong>Available:</strong> ${product.quantity}</p>
-                        <p><strong>Status:</strong> <span style="color: ${product.status === 'In Stock' ? '#28a745' : '#ffc107'}">${product.status}</span></p>
-                    </div>
-                    <div class="card-price">${product.price} per ${product.category === 'Grains' ? 'kg' : product.category === 'Fruits' && product.name.includes('Mango') ? 'piece' : 'unit'}</div>
-                </div>
-            `).join('');
-        }
-
-        function loadFarmers() {
-            const container = document.getElementById('farmers-container');
-            
-            const farmers = [
-                {
-                    id: 1,
-                    name: 'Rahim Hasnat',
-                    email: 'rahim.farmer@gmail.com',
-                    phone: '01712345678',
-                    city: 'Chattogram',
-                    address: 'Hasnat Bari, Char Dighaldi',
-                    products: 15,
-                    joinDate: 'Jan 2023'
-                },
-                {
-                    id: 2,
-                    name: 'Abrar Sayed Tasin',
-                    email: 'tasin.krishi@yahoo.com',
-                    phone: '01823456789',
-                    city: 'Dhaka',
-                    address: 'Tasin Farm, Jatrabari Road',
-                    products: 8,
-                    joinDate: 'Mar 2023'
-                },
-                {
-                    id: 3,
-                    name: 'Kuddus Ali',
-                    email: 'kuddusali.farm@gmail.com',
-                    phone: '01934567890',
-                    city: 'Rajshahi',
-                    address: 'Ali Bari, Godagari',
-                    products: 12,
-                    joinDate: 'Feb 2023'
-                },
-                {
-                    id: 4,
-                    name: 'Fatema Begum',
-                    email: 'fatema.organic@hotmail.com',
-                    phone: '01645678901',
-                    city: 'Dhaka',
-                    address: 'Begum Krishi Farm, Savar',
-                    products: 6,
-                    joinDate: 'Apr 2023'
-                },
-                {
-                    id: 5,
-                    name: 'Abdul Karim',
-                    email: 'karim.vegetables@gmail.com',
-                    phone: '01756789012',
-                    city: 'Cumilla',
-                    address: 'Karim Bagan, Comilla Sadar',
-                    products: 9,
-                    joinDate: 'Jan 2024'
-                },
-                {
-                    id: 6,
-                    name: 'Nasir Uddin',
-                    email: 'nasir.fruits@yahoo.com',
-                    phone: '01867890123',
-                    city: 'Dinajpur',
-                    address: 'Nasir Orchard, Dinajpur Sadar',
-                    products: 11,
-                    joinDate: 'Dec 2023'
-                }
-            ];
-
-            allFarmers = farmers;
-
-            container.innerHTML = farmers.map(farmer => `
-                <div class="card">
-                    <div class="card-title">👨‍🌾 ${farmer.name}</div>
-                    <div class="card-details">
-                        <p><strong>📧 Email:</strong> ${farmer.email}</p>
-                        <p><strong>📱 Phone:</strong> ${farmer.phone}</p>
-                        <p><strong>🏘️ Location:</strong> ${farmer.city}</p>
-                        <p><strong>📍 Address:</strong> ${farmer.address}</p>
-                        <p><strong>🌱 Products:</strong> ${farmer.products} active products</p>
-                        <p><strong>📅 Joined:</strong> ${farmer.joinDate}</p>
-                    </div>
-                    <div class="card-price">Active Farmer</div>
-                </div>
-            `).join('');
-        }
-
-        function loadCustomers() {
-            const container = document.getElementById('customers-container');
-            
-            const customers = [
-                {
-                    id: 1,
-                    name: 'Raiyan Rahman',
-                    email: 'raiyan.rahman@gmail.com',
-                    phone: '01712223334',
-                    city: 'Dhaka',
-                    address: 'House 42, Road 15, Dhanmondi',
-                    orders: 3,
-                    totalSpent: '৳1,250',
-                    status: 'Premium Customer'
-                },
-                {
-                    id: 2,
-                    name: 'Sharmin Akter',
-                    email: 'sharmin.akter@yahoo.com',
-                    phone: '01823334445',
-                    city: 'Dhaka',
-                    address: 'Flat B3, Green View Apartment, Uttara',
-                    orders: 5,
-                    totalSpent: '৳2,100',
-                    status: 'Premium Customer'
-                },
-                {
-                    id: 3,
-                    name: 'Garreth Smith',
-                    email: 'garreth.smith@gmail.com',
-                    phone: '01934445556',
-                    city: 'Chattogram',
-                    address: 'House 78, CDA Residential Area',
-                    orders: 2,
-                    totalSpent: '৳780',
-                    status: 'Regular Customer'
-                },
-                {
-                    id: 4,
-                    name: 'Nusrat Jahan',
-                    email: 'nusrat.jahan@outlook.com',
-                    phone: '01645556667',
-                    city: 'Rangpur',
-                    address: 'Village: Goaldoba, Thana: Sadar',
-                    orders: 1,
-                    totalSpent: '৳320',
-                    status: 'New Customer'
-                },
-                {
-                    id: 5,
-                    name: 'Mohammad Hasan',
-                    email: 'hasan.mohammad@gmail.com',
-                    phone: '01756667778',
-                    city: 'Chattogram',
-                    address: 'Nasirabad Housing, GEC Circle',
-                    orders: 2,
-                    totalSpent: '৳465',
-                    status: 'Regular Customer'
-                }
-            ];
-
-            allCustomers = customers;
-
-            container.innerHTML = customers.map(customer => `
-                <div class="card">
-                    <div class="card-title">👤 ${customer.name}</div>
-                    <div class="card-details">
-                        <p><strong>📧 Email:</strong> ${customer.email}</p>
-                        <p><strong>📱 Phone:</strong> ${customer.phone}</p>
-                        <p><strong>🏘️ City:</strong> ${customer.city}</p>
-                        <p><strong>📍 Address:</strong> ${customer.address}</p>
-                        <p><strong>📦 Orders:</strong> ${customer.orders} completed</p>
-                        <p><strong>💰 Total Spent:</strong> ${customer.totalSpent}</p>
-                    </div>
-                    <div class="card-price" style="color: ${customer.status.includes('Premium') ? '#28a745' : customer.status.includes('New') ? '#17a2b8' : '#6c757d'}">${customer.status}</div>
-                </div>
-            `).join('');
-        }
-
-        function loadOrders() {
-            const container = document.getElementById('orders-container');
-            
-            const orders = [
-                {
-                    id: 1,
-                    orderNumber: 'ORD-2024-001',
-                    customer: 'Raiyan Rahman',
-                    total: '৳285.00',
-                    status: 'delivered',
-                    paymentStatus: 'paid',
-                    orderDate: 'Jan 15, 2024',
-                    items: 'Fresh Capsicum (2kg), Fresh Tomatoes (1.5kg), Green Spinach (1 মুঠা)',
-                    address: 'House 42, Road 15, Dhanmondi, Dhaka 1209',
-                    phone: '01712223334'
-                },
-                {
-                    id: 2,
-                    orderNumber: 'ORD-2024-002',
-                    customer: 'Sharmin Akter',
-                    total: '৳450.00',
-                    status: 'processing',
-                    paymentStatus: 'paid',
-                    orderDate: 'Jan 18, 2024',
-                    items: 'Bangladeshi Mango (3 pcs)',
-                    address: 'Flat B3, Green View Apartment, Uttara, Dhaka 1230',
-                    phone: '01823334445'
-                },
-                {
-                    id: 3,
-                    orderNumber: 'ORD-2024-003',
-                    customer: 'Garreth Smith',
-                    total: '৳180.00',
-                    status: 'pending',
-                    paymentStatus: 'pending',
-                    orderDate: 'Jan 20, 2024',
-                    items: 'Fresh Strawberry (2kg), Mixed vegetables (1 মুঠা)',
-                    address: 'House 78, CDA Residential Area, Chattogram 4000',
-                    phone: '01934445556'
-                },
-                {
-                    id: 4,
-                    orderNumber: 'ORD-2024-004',
-                    customer: 'Nusrat Jahan',
-                    total: '৳320.00',
-                    status: 'shipped',
-                    paymentStatus: 'paid',
-                    orderDate: 'Jan 22, 2024',
-                    items: 'Miniket Rice (2kg), Red Lentils (1.5kg), Fresh Ginger (0.5kg)',
-                    address: 'Village: Goaldoba, Thana: Sadar, Rangpur 5400',
-                    phone: '01645556667'
-                },
-                {
-                    id: 5,
-                    orderNumber: 'ORD-2024-005',
-                    customer: 'Mohammad Hasan',
-                    total: '৳95.00',
-                    status: 'confirmed',
-                    paymentStatus: 'paid',
-                    orderDate: 'Jan 25, 2024',
-                    items: 'Organic Carrots (1kg), Fresh Onion (0.5kg), Red Amaranth (1 মুঠা)',
-                    address: 'Nasirabad Housing, GEC Circle, Chattogram 4000',
-                    phone: '01756667778'
-                }
-            ];
-
-            allOrders = orders;
-
-            container.innerHTML = orders.map(order => `
-                <div class="order-card">
-                    <div class="order-header">
-                        <div class="order-number">📦 ${order.orderNumber}</div>
-                        <div class="order-status status-${order.status}">${order.status.charAt(0).toUpperCase() + order.status.slice(1)}</div>
-                    </div>
-                    <div class="customer-info">
-                        <div class="info-item">
-                            <div class="info-label">👤 Customer</div>
-                            <div class="info-value">${order.customer}</div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label">💰 Total Amount</div>
-                            <div class="info-value">${order.total}</div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label">📅 Order Date</div>
-                            <div class="info-value">${order.orderDate}</div>
-                        </div>
-                        <div class="info-item">
-                            <div class="info-label">💳 Payment</div>
-                            <div class="info-value" style="color: ${order.paymentStatus === 'paid' ? '#28a745' : '#ffc107'}">${order.paymentStatus.charAt(0).toUpperCase() + order.paymentStatus.slice(1)}</div>
-                        </div>
-                    </div>
-                    <div class="card-details">
-                        <p><strong>🛒 Items:</strong> ${order.items}</p>
-                        <p><strong>📍 Shipping:</strong> ${order.address}</p>
-                        <p><strong>📱 Contact:</strong> ${order.phone}</p>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function loadAllData() {
-            // Show loading state
-            const sections = ['products-container', 'farmers-container', 'customers-container', 'orders-container'];
-            sections.forEach(sectionId => {
-                const container = document.getElementById(sectionId);
-                if (container) {
-                    container.innerHTML = `
-                        <div class="loading">
-                            <div class="spinner"></div>
-                            <p>Loading fresh data...</p>
-                        </div>
-                    `;
-                }
-            });
-
-            // Simulate API call delay
-            setTimeout(() => {
-                loadProducts();
-                loadFarmers();
-                loadCustomers();
-                loadOrders();
-                loadOverview();
-                
-                // Show success message
-                showAlert('Data refreshed successfully!', 'success');
-            }, 1500);
-        }
-
-        function showAlert(message, type = 'success') {
-            const alertDiv = document.createElement('div');
-            alertDiv.className = `alert alert-${type}`;
-            alertDiv.innerHTML = message;
-            
-            // Insert at the top of the active section
-            const activeSection = document.querySelector('.section.active');
-            if (activeSection) {
-                activeSection.insertBefore(alertDiv, activeSection.firstChild);
-                
-                // Remove alert after 3 seconds
-                setTimeout(() => {
-                    if (alertDiv.parentNode) {
-                        alertDiv.remove();
-                    }
-                }, 3000);
-            }
-        }
-
-        // Form submission handlers
-        document.getElementById('productForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(this);
-            const productData = Object.fromEntries(formData);
-            
-            // Here you would send data to your PHP backend
-            console.log('Product data:', productData);
-            
-            showAlert('🌱 Product added successfully! Ready for customers.', 'success');
-            this.reset();
         });
-
-        document.getElementById('farmerForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(this);
-            const farmerData = Object.fromEntries(formData);
-            
-            console.log('Farmer data:', farmerData);
-            
-            showAlert('👨‍🌾 Farmer registered successfully! Welcome to FreshVege family.', 'success');
-            this.reset();
-            loadFarmers();
-        });
-
-        document.getElementById('customerForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(this);
-            const customerData = Object.fromEntries(formData);
-            
-            console.log('Customer data:', customerData);
-            
-            showAlert('👤 Customer added successfully! Account is ready.', 'success');
-            this.reset();
-            loadCustomers();
-        });
-
-        // Search and filter functions
-        document.getElementById('product-search')?.addEventListener('input', function() {
-            const searchTerm = this.value.toLowerCase();
-            const productCards = document.querySelectorAll('#products-container .card');
-            
-            productCards.forEach(card => {
-                const productName = card.querySelector('.card-title').textContent.toLowerCase();
-                const productDesc = card.querySelector('.card-details').textContent.toLowerCase();
-                
-                if (productName.includes(searchTerm) || productDesc.includes(searchTerm)) {
-                    card.style.display = 'block';
-                } else {
-                    card.style.display = 'none';
-                }
-            });
-        });
-
-        document.getElementById('order-search')?.addEventListener('input', function() {
-            const searchTerm = this.value.toLowerCase();
-            const orderCards = document.querySelectorAll('#orders-container .order-card');
-            
-            orderCards.forEach(card => {
-                const orderText = card.textContent.toLowerCase();
-                
-                if (orderText.includes(searchTerm)) {
-                    card.style.display = 'block';
-                } else {
-                    card.style.display = 'none';
-                }
-            });
-        });
-
-        // Initialize dashboard
-        window.onload = function() {
-            // Load initial data
-            loadOverview();
-            loadProducts();
-            loadFarmers();
-            loadCustomers();
-            loadOrders();
-            
-            // Welcome message
-            setTimeout(() => {
-                showAlert('Welcome to FreshVege Dashboard! সুস্বাগতম! Everything is ready for farm-to-doorstep service.', 'success');
-            }, 1000);
-        };
-
-        // Add some interactivity to stats cards
-        document.addEventListener('DOMContentLoaded', function() {
-            const statCards = document.querySelectorAll('.stat-card');
-            statCards.forEach(card => {
-                card.addEventListener('click', function() {
-                    const label = this.querySelector('.stat-label').textContent;
-                    
-                    if (label.includes('Products')) {
-                        showSection('view-products');
-                        document.querySelector('[onclick="showSection(\'view-products\')"]').classList.add('active');
-                    } else if (label.includes('Farmers')) {
-                        showSection('manage-farmers');
-                        document.querySelector('[onclick="showSection(\'manage-farmers\')"]').classList.add('active');
-                    } else if (label.includes('Customers')) {
-                        showSection('manage-customers');
-                        document.querySelector('[onclick="showSection(\'manage-customers\')"]').classList.add('active');
-                    } else if (label.includes('Orders')) {
-                        showSection('view-orders');
-                        document.querySelector('[onclick="showSection(\'view-orders\')"]').classList.add('active');
-                    }
-                });
-            });
-        });
-    </script>
+    });
+}); 
+</script>
 </body>
 </html>
