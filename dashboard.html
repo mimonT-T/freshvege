@@ -787,7 +787,6 @@
     </div>
 
     <script>
-        // Global variables to store data
 // Global variables to store data
 let allProducts = [];
 let allFarmers = [];
@@ -1088,7 +1087,7 @@ async function loadProducts() {
                     <div class="card-price">৳${parseFloat(product.price).toFixed(2)} per ${product.unit_abbrev}</div>
                 </div>
             `).join('');
-        } else {
+        } else { 
             throw new Error(response.error || 'Failed to load products');
         }
     } catch (error) {
